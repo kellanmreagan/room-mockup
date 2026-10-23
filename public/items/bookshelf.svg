@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none" stroke="#2a2622" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+  <title>Bookshelf</title>
+  <rect x="28" y="14" width="72" height="100"/>
+  <path d="M28 46h72M28 74h72M28 102h72"/>
+  <path d="M38 26h8v20h-8zM50 30h8v16h-8zM62 24h10v22h-10zM78 28h10v18h-10z"/>
+  <path d="M38 52h26v22H38zM70 56h20v18H70z"/>
+</svg>

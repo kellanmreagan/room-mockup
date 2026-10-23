@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none" stroke="#2a2622" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+  <title>Mirror</title>
+  <path d="M40 110V58a24 24 0 0 1 48 0v52"/>
+  <path d="M48 110V64a16 16 0 0 1 32 0v46"/>
+  <path d="M32 110h64"/>
+  <path d="M58 74v16"/>
+</svg>
