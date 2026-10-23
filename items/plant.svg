@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none" stroke="#2a2622" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+  <title>Plant</title>
+  <path d="M48 80h32l8 26H40z"/>
+  <path d="M64 80V66"/>
+  <ellipse cx="64" cy="44" rx="12" ry="18"/>
+  <ellipse cx="44" cy="58" rx="16" ry="10" transform="rotate(-32 44 58)"/>
+  <ellipse cx="86" cy="56" rx="16" ry="10" transform="rotate(30 86 56)"/>
+</svg>
