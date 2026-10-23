@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none" stroke="#2a2622" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+  <title>Side table</title>
+  <rect x="34" y="34" width="60" height="12" rx="2"/>
+  <path d="M46 46v42M82 46v42"/>
+  <path d="M40 88h48"/>
+  <path d="M44 66h40"/>
+</svg>

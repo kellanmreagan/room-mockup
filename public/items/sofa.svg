@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none" stroke="#2a2622" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+  <title>Sofa</title>
+  <path d="M34 48h60v20H34z"/>
+  <path d="M24 66h80v22H24z"/>
+  <path d="M18 58h16v34H18z"/>
+  <path d="M94 58h16v34H94z"/>
+  <path d="M36 88v16M92 88v16"/>
+  <path d="M64 70v14"/>
+</svg>
