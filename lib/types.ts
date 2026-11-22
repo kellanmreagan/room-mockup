@@ -1,3 +1,5 @@
+import type { Availability, Retailer } from "./products/types";
+
 export interface StoreLink {
   store: string;
   href: string;
@@ -9,6 +11,12 @@ export interface Product {
   imageSrc: string;
   links: StoreLink[];
   origin: "sample" | "custom";
+  retailer?: Retailer;
+  price?: number | null;
+  currency?: string | null;
+  fetchedAt?: string;
+  availability?: Availability;
+  shopUrl?: string;
 }
 
 export interface Placement {

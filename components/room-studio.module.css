@@ -25,6 +25,34 @@
   line-height: 1.45;
 }
 
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+
+.step {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--card);
+}
+
+.stepActive {
+  color: var(--ink);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.stepDone {
+  color: var(--accent);
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -89,6 +117,7 @@
 .toolButton:focus-visible,
 .handle:focus-visible,
 .form input:focus-visible,
+.searchRow input:focus-visible,
 .fileButton:focus-within {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -153,6 +182,56 @@
   background: #d9d3cb;
   border-radius: 10px;
   overflow: hidden;
+}
+
+.marking {
+  cursor: crosshair;
+}
+
+.floorActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.floorSvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.floorPoly {
+  fill: rgba(36, 56, 46, 0.16);
+  stroke: #24382e;
+  stroke-width: 0.6;
+}
+
+.floorLine {
+  stroke: #24382e;
+  stroke-width: 0.6;
+  stroke-dasharray: 2 1.5;
+}
+
+.floorHandle {
+  position: absolute;
+  z-index: 6;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: #fff;
+  padding: 0;
+  cursor: grab;
+  touch-action: none;
+}
+
+.floorHandle:disabled {
+  cursor: default;
 }
 
 .photo {
@@ -237,6 +316,9 @@
   line-height: 1.2;
   padding: 4px 6px;
   cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
 }
 
 .danger {
@@ -274,6 +356,69 @@
 
 .panel {
   padding: 12px 14px 16px;
+}
+
+.searchRow {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0 10px;
+  align-items: center;
+}
+
+.searchRow input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.subhead {
+  margin: 12px 0 0;
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+}
+
+.priceAsOf {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.fallbackNote {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f4efe6;
+  color: var(--ink);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.shopLink {
+  color: var(--accent);
+  font-size: 0.8125rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.disclosure {
+  margin-top: 24px;
+  font-size: 0.75rem;
+  color: var(--muted);
 }
 
 .disclaimer {

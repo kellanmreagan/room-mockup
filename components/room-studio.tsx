@@ -2,7 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SAMPLE_DATA_NOTE } from "@/lib/catalog";
+import {
+  defaultFloorQuad,
+  scaleForPlacement,
+  sortClickedPoints,
+  type FloorPoint,
+  type FloorQuad,
+} from "@/lib/floor";
 import { NoopRenderer } from "@/lib/mockup-renderer";
+import { toStudioProduct } from "@/lib/products/adapt";
+import type { CatalogProduct, SearchAllResult } from "@/lib/products/types";
 import {
   CustomProduct,
   MockupDownload,
@@ -12,6 +21,7 @@ import {
   type ExportLayer,
 } from "@/lib/studio";
 import type { Placement, Product, StoreLink } from "@/lib/types";
+import { trackUsage } from "@/lib/usage";
 import { PlainImage } from "./plain-image";
 import styles from "./room-studio.module.css";
 
@@ -46,21 +56,34 @@ export function RoomStudio({ sampleItems }: RoomStudioProps) {
   const endDragRef = useRef<(() => void) | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [customProducts, setCustomProducts] = useState<Product[]>([]);
+  const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
   const [placements, setPlacements] = useState<Placement[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [floorQuad, setFloorQuad] = useState<FloorQuad | null>(null);
+  const [floorDraft, setFloorDraft] = useState<FloorPoint[]>([]);
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchResult, setSearchResult] = useState<SearchAllResult | null>(null);
 
   const products = useMemo(
-    () => [...sampleItems, ...customProducts],
-    [sampleItems, customProducts],
+    () => [...sampleItems, ...customProducts, ...catalogProducts],
+    [sampleItems, customProducts, catalogProducts],
   );
   const productById = useMemo(() => {
     const map = new Map<string, Product>();
     for (const product of products) map.set(product.id, product);
     return map;
   }, [products]);
+
+  const step = !photoUrl ? 1 : !floorQuad ? 2 : placements.length === 0 ? 3 : 4;
+  const markingFloor = Boolean(photoUrl && !floorQuad);
+  const showAmazonDisclosure = useMemo(() => {
+    if (products.some((product) => product.retailer === "amazon")) return true;
+    return Boolean(searchResult?.products.some((product) => product.retailer === "amazon"));
+  }, [products, searchResult]);
 
   useEffect(() => {
     return () => {
@@ -81,13 +104,119 @@ export function RoomStudio({ sampleItems }: RoomStudioProps) {
     RoomPhoto.revoke(photoUrlRef.current);
     photoUrlRef.current = nextUrl;
     setPhotoUrl(nextUrl);
+    setFloorQuad(null);
+    setFloorDraft([]);
+    trackUsage("photo_uploaded", { type: file.type || "image" });
     setStatus({
-      text: "Room photo ready. Place an item from the panel.",
+      text: "Room photo ready. Click 4 floor corners, or skip / use default.",
       error: false,
     });
   }
 
-  function placeProduct(productId: string) {
+  function commitFloor(quad: FloorQuad, method: "clicked" | "default") {
+    setFloorQuad(quad);
+    setFloorDraft([]);
+    trackUsage("floor_marked", { method });
+    setStatus({
+      text:
+        method === "default"
+          ? "Default floor applied. Search and place items; drag them on the floor."
+          : "Floor marked. Search and place items; drag them on the floor.",
+      error: false,
+    });
+  }
+
+  function skipFloor() {
+    if (!photoUrl) {
+      setStatus({ text: "Upload a room photo first.", error: true });
+      return;
+    }
+    commitFloor(defaultFloorQuad(), "default");
+  }
+
+  function redoFloor() {
+    setFloorQuad(null);
+    setFloorDraft([]);
+    setStatus({
+      text: "Click 4 floor corners (back then front), or skip / use default.",
+      error: false,
+    });
+  }
+
+  function pointFromPointer(event: { clientX: number; clientY: number }, stage: HTMLElement): FloorPoint {
+    const rect = stage.getBoundingClientRect();
+    const width = Math.max(rect.width, 1);
+    const height = Math.max(rect.height, 1);
+    return {
+      x: OverlayLayout.clamp(((event.clientX - rect.left) / width) * 100, 0, 100),
+      y: OverlayLayout.clamp(((event.clientY - rect.top) / height) * 100, 0, 100),
+    };
+  }
+
+  function addFloorPoint(event: React.PointerEvent<HTMLElement>) {
+    const stage = stageRef.current;
+    if (!stage || !markingFloor) return;
+    const point = pointFromPointer(event, stage);
+    const next = [...floorDraft, point];
+    if (next.length >= 4) {
+      commitFloor(sortClickedPoints(next.slice(0, 4)), "clicked");
+      return;
+    }
+    setFloorDraft(next);
+    setStatus({
+      text: `Floor corner ${next.length} of 4. Click the remaining corners.`,
+      error: false,
+    });
+  }
+
+  function beginFloorHandleDrag(event: React.PointerEvent<HTMLButtonElement>, index: number) {
+    if (!floorQuad) return;
+    const stage = stageRef.current;
+    if (!stage) return;
+    const rect = stage.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return;
+    event.preventDefault();
+    event.stopPropagation();
+    endDragRef.current?.();
+    const origin = floorQuad[index];
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+
+    const onMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      const dx = ((moveEvent.clientX - startX) / rect.width) * 100;
+      const dy = ((moveEvent.clientY - startY) / rect.height) * 100;
+      setFloorQuad((current) => {
+        if (!current) return current;
+        const next: FloorQuad = [current[0], current[1], current[2], current[3]];
+        next[index] = {
+          x: OverlayLayout.clamp(origin.x + dx, 0, 100),
+          y: OverlayLayout.clamp(origin.y + dy, 0, 100),
+        };
+        return next;
+      });
+    };
+
+    const onEnd = (endEvent: PointerEvent) => {
+      if (endEvent.pointerId !== pointerId) return;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onEnd);
+      window.removeEventListener("pointercancel", onEnd);
+      endDragRef.current = null;
+    };
+
+    endDragRef.current = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onEnd);
+      window.removeEventListener("pointercancel", onEnd);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onEnd);
+    window.addEventListener("pointercancel", onEnd);
+  }
+
+  function placeProduct(productId: string, name?: string) {
     if (!photoUrl) {
       setStatus({ text: "Upload a room photo before placing items.", error: true });
       return;
@@ -95,13 +224,22 @@ export function RoomStudio({ sampleItems }: RoomStudioProps) {
     const created = OverlayLayout.create(productId, placements);
     setPlacements((current) => [...current, created]);
     setSelectedId(created.instanceId);
-    const product = productById.get(productId);
+    trackUsage("item_placed", { id: productId.slice(0, 40) });
+    const product = name ? { name } : productById.get(productId);
     setStatus({
       text: product
         ? `Placed ${product.name}. Drag it, or resize from the corner.`
         : "Placed item.",
       error: false,
     });
+  }
+
+  function placeCatalogProduct(item: CatalogProduct) {
+    const product = toStudioProduct(item);
+    setCatalogProducts((current) =>
+      current.some((entry) => entry.id === product.id) ? current : [...current, product],
+    );
+    placeProduct(product.id, product.name);
   }
 
   function removePlacement(instanceId: string) {
@@ -219,6 +357,44 @@ export function RoomStudio({ sampleItems }: RoomStudioProps) {
     setStatus({ text: `Added "${product.name}" to the panel.`, error: false });
   }
 
+  async function onSearch(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (query.length > 100) {
+      setStatus({ text: "Search query must be 100 characters or fewer.", error: true });
+      return;
+    }
+    setSearching(true);
+    trackUsage("search", { qLength: query.trim().length });
+    try {
+      const params = new URLSearchParams({ q: query.trim(), limit: "10" });
+      const response = await fetch(`/api/products/search?${params.toString()}`);
+      const payload = (await response.json()) as SearchAllResult & { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Search failed.");
+      }
+      setSearchResult(payload);
+      const amazon = payload.sources.find((source) => source.id === "amazon-creators");
+      if (payload.usingSampleFallback) {
+        setStatus({
+          text: amazon?.error
+            ? `Showing sample catalog — ${amazon.error}`
+            : "Showing sample catalog — Amazon keys not configured",
+          error: false,
+        });
+      } else {
+        setStatus({
+          text: `Found ${payload.products.length} item${payload.products.length === 1 ? "" : "s"}.`,
+          error: false,
+        });
+      }
+    } catch (error) {
+      const text = error instanceof Error ? error.message : "Search failed.";
+      setStatus({ text, error: true });
+    } finally {
+      setSearching(false);
+    }
+  }
+
   async function onDownload() {
     if (!photoUrl || exporting) return;
     setExporting(true);
@@ -227,16 +403,18 @@ export function RoomStudio({ sampleItems }: RoomStudioProps) {
       for (const placement of placements) {
         const product = productById.get(placement.productId);
         if (!product) continue;
+        const scale = scaleForPlacement(floorQuad, placement);
         layers.push({
           name: product.name,
           src: product.imageSrc,
           x: placement.x,
           y: placement.y,
-          width: placement.width,
+          width: placement.width * scale,
           z: placement.z,
         });
       }
       const message = await MockupDownload.save(photoUrl, layers);
+      trackUsage("export", { items: layers.length });
       setStatus({ text: message, error: false });
     } catch (error) {
       const text = error instanceof Error ? error.message : "Could not download the mockup.";
@@ -246,14 +424,17 @@ export function RoomStudio({ sampleItems }: RoomStudioProps) {
     }
   }
 
+  const floorPoints = floorQuad ?? floorDraft;
+  const fallbackNote = searchFallbackNote(searchResult);
+
   return (
     <div className={styles.page}>
       <header className={styles.header}>
         <div>
           <h1>Room Mockup</h1>
           <p className={styles.lede}>
-            Upload a photo of your room, then place furniture and decor on it.
-            The photo stays in this browser.
+            Upload a photo of your room, mark the floor, then place furniture and
+            decor on it. The photo stays in this browser.
           </p>
         </div>
         <div className={styles.actions}>
@@ -289,6 +470,14 @@ export function RoomStudio({ sampleItems }: RoomStudioProps) {
           </span>
         </div>
       </header>
+
+      <ol className={styles.steps} aria-label="Prototype steps">
+        <Step n={1} current={step} label="Upload photo" />
+        <Step n={2} current={step} label="Mark floor" />
+        <Step n={3} current={step} label="Search & place" />
+        <Step n={4} current={step} label="Click to shop" />
+      </ol>
+
       <p id="ai-render-note" className={styles.note}>
         {NoopRenderer.unavailableReason}
       </p>
@@ -306,12 +495,35 @@ export function RoomStudio({ sampleItems }: RoomStudioProps) {
             <h2>Your room</h2>
             <p className={styles.note}>Preview: {renderer.label}</p>
           </div>
+          <div className={styles.floorActions}>
+            <button
+              type="button"
+              className={`${styles.button} ${styles.small}`}
+              disabled={!photoUrl || Boolean(floorQuad)}
+              onClick={skipFloor}
+            >
+              Skip / use default
+            </button>
+            <button
+              type="button"
+              className={`${styles.button} ${styles.small}`}
+              disabled={!photoUrl}
+              onClick={redoFloor}
+            >
+              Redo floor
+            </button>
+          </div>
           <div
             ref={stageRef}
-            className={styles.stage}
+            className={markingFloor ? `${styles.stage} ${styles.marking}` : styles.stage}
             onPointerDown={(event) => {
               const target = event.target;
               if (target instanceof Element && target.closest("[data-placement]")) return;
+              if (target instanceof Element && target.closest("[data-floor-handle]")) return;
+              if (markingFloor) {
+                addFloorPoint(event);
+                return;
+              }
               setSelectedId(null);
             }}
           >
@@ -332,20 +544,59 @@ export function RoomStudio({ sampleItems }: RoomStudioProps) {
                 <p>Upload a room photo to start placing furniture.</p>
               </div>
             )}
+            {photoUrl && floorPoints.length > 0 ? (
+              <svg
+                className={styles.floorSvg}
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                {floorQuad ? (
+                  <polygon className={styles.floorPoly} points={pointsAttr(floorQuad)} />
+                ) : (
+                  <polyline
+                    className={styles.floorLine}
+                    points={pointsAttr(floorDraft)}
+                    fill="none"
+                  />
+                )}
+              </svg>
+            ) : null}
+            {photoUrl
+              ? floorPoints.map((point, index) => (
+                  <button
+                    key={`floor-${index}`}
+                    type="button"
+                    data-floor-handle
+                    className={styles.floorHandle}
+                    style={{ left: `${point.x}%`, top: `${point.y}%` }}
+                    aria-label={`Floor corner ${index + 1}`}
+                    disabled={!floorQuad}
+                    onPointerDown={(event) => beginFloorHandleDrag(event, index)}
+                  />
+                ))
+              : null}
             {photoUrl
               ? placements.map((placement) => {
                   const product = productById.get(placement.productId);
                   if (!product) return null;
+                  const scale = scaleForPlacement(floorQuad, placement);
                   return (
                     <PlacedProduct
                       key={placement.instanceId}
                       placement={placement}
                       product={product}
+                      displayWidth={placement.width * scale}
                       selected={placement.instanceId === selectedId}
                       onMovePointerDown={(event) => beginDrag(event, placement, "move")}
                       onResizePointerDown={(event) => beginDrag(event, placement, "resize")}
                       onRemove={() => removePlacement(placement.instanceId)}
                       onBringToFront={() => bringToFront(placement.instanceId)}
+                      onShop={() => {
+                        trackUsage("product_click", {
+                          retailer: product.retailer ?? product.origin,
+                        });
+                      }}
                     />
                   );
                 })
@@ -359,12 +610,82 @@ export function RoomStudio({ sampleItems }: RoomStudioProps) {
             <p className={styles.disclaimer}>{SAMPLE_DATA_NOTE}</p>
             <p id="place-requirement" className={styles.note}>
               {photoUrl
-                ? "Place an item, then drag it. Resize from the corner handle."
+                ? "Search or pick a sample item, then drag it. Resize from the corner handle."
                 : "Upload a room photo before placing items."}
             </p>
           </div>
+
+          <form className={styles.searchRow} onSubmit={onSearch}>
+            <label className={styles.srOnly} htmlFor="product-search">
+              Search products
+            </label>
+            <input
+              id="product-search"
+              type="search"
+              value={query}
+              maxLength={100}
+              placeholder="Search sofa, lamp, table…"
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <button
+              type="submit"
+              className={`${styles.button} ${styles.primary} ${styles.small}`}
+              disabled={searching}
+            >
+              {searching ? "Searching…" : "Search"}
+            </button>
+          </form>
+          {fallbackNote ? <p className={styles.fallbackNote}>{fallbackNote}</p> : null}
+
+          {searchResult ? (
+            <>
+              <h3 className={styles.subhead}>Search results</h3>
+              {searchResult.products.length === 0 ? (
+                <p className={styles.note}>No products matched that search.</p>
+              ) : (
+                <ul className={styles.catalog}>
+                  {searchResult.products.map((item) => (
+                    <li key={item.id} className={styles.card}>
+                      <div className={styles.thumb}>
+                        <ProductThumb src={item.imageUrl} name={item.title} />
+                      </div>
+                      <div>
+                        <h3>{item.title}</h3>
+                        <p className={styles.origin}>
+                          <span className={styles.badge}>{item.retailer}</span>{" "}
+                          {availabilityLabel(item.availability)}
+                        </p>
+                        <PriceLine
+                          price={item.price}
+                          currency={item.currency}
+                          fetchedAt={item.fetchedAt}
+                        />
+                        <button
+                          type="button"
+                          className={`${styles.button} ${styles.small} ${styles.primary}`}
+                          disabled={!photoUrl}
+                          aria-describedby="place-requirement"
+                          onClick={() => placeCatalogProduct(item)}
+                        >
+                          Place
+                        </button>{" "}
+                        <ShopAnchor
+                          href={item.affiliateUrl ?? item.productUrl}
+                          onClick={() => {
+                            trackUsage("product_click", { retailer: item.retailer });
+                          }}
+                        />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          ) : null}
+
+          <h3 className={styles.subhead}>Sample catalog</h3>
           <ul className={styles.catalog}>
-            {products.map((product) => (
+            {[...sampleItems, ...customProducts].map((product) => (
               <li key={product.id} className={styles.card}>
                 <div className={styles.thumb}>
                   <ProductThumb src={product.imageSrc} name={product.name} />
@@ -372,8 +693,16 @@ export function RoomStudio({ sampleItems }: RoomStudioProps) {
                 <div>
                   <h3>{product.name}</h3>
                   <p className={styles.origin}>
+                    {product.retailer ? (
+                      <span className={styles.badge}>{product.retailer}</span>
+                    ) : null}{" "}
                     {product.origin === "sample" ? "Sample type" : "Your product"}
                   </p>
+                  <PriceLine
+                    price={product.price ?? null}
+                    currency={product.currency ?? null}
+                    fetchedAt={product.fetchedAt}
+                  />
                   <button
                     type="button"
                     className={`${styles.button} ${styles.small} ${styles.primary}`}
@@ -383,7 +712,21 @@ export function RoomStudio({ sampleItems }: RoomStudioProps) {
                   >
                     Place in room
                   </button>
-                  <StoreLinks links={product.links} />
+                  {product.shopUrl ? (
+                    <>
+                      {" "}
+                      <ShopAnchor
+                        href={product.shopUrl}
+                        onClick={() => {
+                          trackUsage("product_click", {
+                            retailer: product.retailer ?? product.origin,
+                          });
+                        }}
+                      />
+                    </>
+                  ) : (
+                    <StoreLinks links={product.links} />
+                  )}
                 </div>
               </li>
             ))}
@@ -430,7 +773,87 @@ export function RoomStudio({ sampleItems }: RoomStudioProps) {
           </form>
         </section>
       </div>
+      {showAmazonDisclosure ? (
+        <p className={styles.disclosure}>
+          As an Amazon Associate we earn from qualifying purchases.
+        </p>
+      ) : null}
     </div>
+  );
+}
+
+function Step({ n, current, label }: { n: number; current: number; label: string }) {
+  const className =
+    n === current ? `${styles.step} ${styles.stepActive}` : n < current ? `${styles.step} ${styles.stepDone}` : styles.step;
+  return (
+    <li className={className}>
+      {n} {label}
+    </li>
+  );
+}
+
+function pointsAttr(points: readonly FloorPoint[]): string {
+  return points.map((point) => `${point.x},${point.y}`).join(" ");
+}
+
+function searchFallbackNote(result: SearchAllResult | null): string | null {
+  if (!result?.usingSampleFallback) return null;
+  const amazon = result.sources.find((source) => source.id === "amazon-creators");
+  if (amazon?.error) return `Showing sample catalog — ${amazon.error}`;
+  return "Showing sample catalog — Amazon keys not configured";
+}
+
+function availabilityLabel(value: CatalogProduct["availability"] | undefined): string {
+  if (value === "in_stock") return "In stock";
+  if (value === "out_of_stock") return "Out of stock";
+  return "Availability unknown";
+}
+
+function formatPrice(price: number, currency: string | null): string {
+  if (!currency || currency === "USD") return `$${price.toFixed(2)}`;
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(price);
+  } catch {
+    return `${price} ${currency}`;
+  }
+}
+
+function formatFetchedAt(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleString();
+}
+
+function PriceLine({
+  price,
+  currency,
+  fetchedAt,
+}: {
+  price: number | null;
+  currency: string | null;
+  fetchedAt?: string;
+}) {
+  if (price === null || price === undefined) return null;
+  return (
+    <p className={styles.priceAsOf}>
+      {formatPrice(price, currency)}
+      {fetchedAt ? ` as of ${formatFetchedAt(fetchedAt)}` : null}
+    </p>
+  );
+}
+
+function ShopAnchor({ href, onClick }: { href: string; onClick?: () => void }) {
+  if (!href) return null;
+  return (
+    <a
+      className={styles.shopLink}
+      href={href}
+      target="_blank"
+      rel="sponsored noopener noreferrer"
+      onClick={onClick}
+    >
+      Shop
+    </a>
   );
 }
 
@@ -466,21 +889,26 @@ function ProductThumb({ src, name }: { src: string; name: string }) {
 function PlacedProduct({
   placement,
   product,
+  displayWidth,
   selected,
   onMovePointerDown,
   onResizePointerDown,
   onRemove,
   onBringToFront,
+  onShop,
 }: {
   placement: Placement;
   product: Product;
+  displayWidth: number;
   selected: boolean;
   onMovePointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
   onResizePointerDown: (event: React.PointerEvent<HTMLButtonElement>) => void;
   onRemove: () => void;
   onBringToFront: () => void;
+  onShop: () => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
+  const shopHref = product.shopUrl ?? product.links[0]?.href;
   return (
     <div
       data-placement
@@ -488,7 +916,7 @@ function PlacedProduct({
       style={{
         left: `${placement.x}%`,
         top: `${placement.y}%`,
-        width: `${placement.width}%`,
+        width: `${displayWidth}%`,
         zIndex: placement.z,
       }}
       onPointerDown={onMovePointerDown}
@@ -508,10 +936,23 @@ function PlacedProduct({
         data-control
         onPointerDown={(event) => event.stopPropagation()}
       >
-        <details className={styles.buy}>
-          <summary className={styles.toolButton}>Buy / View</summary>
-          <StoreLinks links={product.links} menu />
-        </details>
+        {shopHref ? (
+          <a
+            className={styles.toolButton}
+            href={shopHref}
+            target="_blank"
+            rel="sponsored noopener noreferrer"
+            onClick={onShop}
+          >
+            Shop
+          </a>
+        ) : null}
+        {product.links.length > 1 ? (
+          <details className={styles.buy}>
+            <summary className={styles.toolButton}>Buy / View</summary>
+            <StoreLinks links={product.links} menu />
+          </details>
+        ) : null}
         <button type="button" className={styles.toolButton} onClick={onBringToFront}>
           Bring to front <span className={styles.srOnly}>{product.name}</span>
         </button>
