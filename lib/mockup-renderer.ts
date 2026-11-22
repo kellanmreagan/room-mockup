@@ -17,6 +17,9 @@ export interface MockupRenderResult {
  * inpainting with REPLICATE_API_TOKEN. It would send the room photo and a
  * mask of the placed items, then return the edited image.
  * NoopRenderer does not call a network. The page composites overlays by hand.
+ *
+ * AI_RENDER_ENABLED=false — this build ignores the flag and always uses
+ * NoopRenderer (no network calls). Flip it only after a real renderer is wired.
  */
 export interface MockupRenderer {
   readonly id: string;

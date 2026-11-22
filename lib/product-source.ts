@@ -2,15 +2,13 @@ import { SAMPLE_PRODUCTS } from "./catalog";
 import type { Product } from "./types";
 
 /**
- * A source of products the panel can list.
+ * Browser-side list for the MVP product panel (`listProducts`).
  *
- * TODO: plug real listings in behind this interface. Required keys / access:
- * - Amazon Product Advertising API 5.0: access key, secret key, partner/associate tag
- * - Wayfair: no public product API (affiliate feed via CJ/Impact)
- * - IKEA: no official public API
- * - eBay Browse API: OAuth app client id and secret
- * - Facebook Marketplace: no public API
- * - SerpApi Google Shopping: SERPAPI_API_KEY (cross-store aggregator)
+ * Server search (Amazon Creators API, Wayfair/Walmart stubs, sample adapter)
+ * lives in `lib/products/source.ts` and is used by `/api/products/search`.
+ *
+ * PA-API 5.0 was retired May 15 2026. Amazon listings use the Creators API
+ * (`AMAZON_CREATORS_*` env vars). Wayfair: CJ Affiliate feed. Walmart: Impact.
  */
 export interface ProductSource {
   readonly id: string;
